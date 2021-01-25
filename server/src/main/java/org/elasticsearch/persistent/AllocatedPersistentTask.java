@@ -54,20 +54,6 @@ public class AllocatedPersistentTask extends CancellableTask {
     }
 
     @Override
-    public boolean shouldCancelChildrenOnCancellation() {
-        return true;
-    }
-
-    // In case of persistent tasks we always need to return: `false`
-    // because in case of persistent task the parent task isn't a task in the task manager, but in cluster state.
-    // This instructs the task manager not to try to kill this persistent task when the task manager cannot find
-    // a fake parent node id "cluster" in the cluster state
-    @Override
-    public final boolean cancelOnParentLeaving() {
-        return false;
-    }
-
-    @Override
     public Status getStatus() {
         return new PersistentTasksNodeService.Status(state.get());
     }
@@ -78,7 +64,7 @@ public class AllocatedPersistentTask extends CancellableTask {
      * This doesn't affect the status of this allocated task.
      */
     public void updatePersistentTaskState(final PersistentTaskState state,
-                                          final ActionListener<PersistentTasksCustomMetaData.PersistentTask<?>> listener) {
+                                          final ActionListener<PersistentTasksCustomMetadata.PersistentTask<?>> listener) {
         persistentTasksService.sendUpdateStateRequest(persistentTaskId, allocationId, state, listener);
     }
 
@@ -109,7 +95,7 @@ public class AllocatedPersistentTask extends CancellableTask {
      * @param timeout a timeout for waiting
      * @param listener the callback listener
      */
-    public void waitForPersistentTask(final Predicate<PersistentTasksCustomMetaData.PersistentTask<?>> predicate,
+    public void waitForPersistentTask(final Predicate<PersistentTasksCustomMetadata.PersistentTask<?>> predicate,
                                       final @Nullable TimeValue timeout,
                                       final PersistentTasksService.WaitForPersistentTaskListener<?> listener) {
         persistentTasksService.waitForPersistentTaskCondition(persistentTaskId, predicate, timeout, listener);
@@ -148,9 +134,9 @@ public class AllocatedPersistentTask extends CancellableTask {
                 if (prevState == State.STARTED) {
                     logger.trace("sending notification for completed task [{}] with id [{}]", getAction(), getPersistentTaskId());
                     persistentTasksService.sendCompletionRequest(getPersistentTaskId(), getAllocationId(), failure, new
-                            ActionListener<PersistentTasksCustomMetaData.PersistentTask<?>>() {
+                            ActionListener<PersistentTasksCustomMetadata.PersistentTask<?>>() {
                                 @Override
-                                public void onResponse(PersistentTasksCustomMetaData.PersistentTask<?> persistentTask) {
+                                public void onResponse(PersistentTasksCustomMetadata.PersistentTask<?> persistentTask) {
                                     logger.trace("notification for task [{}] with id [{}] was successful", getAction(),
                                             getPersistentTaskId());
                                 }

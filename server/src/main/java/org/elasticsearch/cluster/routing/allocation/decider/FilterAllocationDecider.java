@@ -19,7 +19,8 @@
 
 package org.elasticsearch.cluster.routing.allocation.decider;
 
-import org.elasticsearch.cluster.metadata.IndexMetaData;
+import org.elasticsearch.cluster.metadata.IndexMetadata;
+import org.elasticsearch.cluster.node.DiscoveryNode;
 import org.elasticsearch.cluster.node.DiscoveryNodeFilters;
 import org.elasticsearch.cluster.routing.RecoverySource;
 import org.elasticsearch.cluster.routing.RoutingNode;
@@ -76,7 +77,7 @@ public class FilterAllocationDecider extends AllocationDecider {
     public static final Setting.AffixSetting<String> CLUSTER_ROUTING_INCLUDE_GROUP_SETTING =
         Setting.prefixKeySetting(CLUSTER_ROUTING_INCLUDE_GROUP_PREFIX + ".", key ->
             Setting.simpleString(key, value -> IP_VALIDATOR.accept(key, value), Property.Dynamic, Property.NodeScope));
-    public static final Setting.AffixSetting<String>CLUSTER_ROUTING_EXCLUDE_GROUP_SETTING =
+    public static final Setting.AffixSetting<String> CLUSTER_ROUTING_EXCLUDE_GROUP_SETTING =
         Setting.prefixKeySetting(CLUSTER_ROUTING_EXCLUDE_GROUP_PREFIX + ".", key ->
             Setting.simpleString(key, value -> IP_VALIDATOR.accept(key, value), Property.Dynamic, Property.NodeScope));
 
@@ -99,8 +100,8 @@ public class FilterAllocationDecider extends AllocationDecider {
             // only for unassigned - we filter allocation right after the index creation (for shard shrinking) to ensure
             // that once it has been allocated post API the replicas can be allocated elsewhere without user interaction
             // this is a setting that can only be set within the system!
-            IndexMetaData indexMd = allocation.metaData().getIndexSafe(shardRouting.index());
-            DiscoveryNodeFilters initialRecoveryFilters = indexMd.getInitialRecoveryFilters();
+            IndexMetadata indexMd = allocation.metadata().getIndexSafe(shardRouting.index());
+            DiscoveryNodeFilters initialRecoveryFilters = DiscoveryNodeFilters.trimTier(indexMd.getInitialRecoveryFilters());
             if (initialRecoveryFilters != null  &&
                 shardRouting.recoverySource().getType() == RecoverySource.Type.LOCAL_SHARDS &&
                 initialRecoveryFilters.match(node.node()) == false) {
@@ -109,30 +110,41 @@ public class FilterAllocationDecider extends AllocationDecider {
                 return allocation.decision(Decision.NO, NAME, explanation, initialRecoveryFilters);
             }
         }
-        return shouldFilter(shardRouting, node, allocation);
+        return shouldFilter(shardRouting, node.node(), allocation);
     }
 
     @Override
-    public Decision canAllocate(IndexMetaData indexMetaData, RoutingNode node, RoutingAllocation allocation) {
-        return shouldFilter(indexMetaData, node, allocation);
+    public Decision canAllocate(IndexMetadata indexMetadata, RoutingNode node, RoutingAllocation allocation) {
+        return shouldFilter(indexMetadata, node.node(), allocation);
     }
 
     @Override
     public Decision canRemain(ShardRouting shardRouting, RoutingNode node, RoutingAllocation allocation) {
-        return shouldFilter(shardRouting, node, allocation);
+        return shouldFilter(shardRouting, node.node(), allocation);
     }
 
-    private Decision shouldFilter(ShardRouting shardRouting, RoutingNode node, RoutingAllocation allocation) {
+    @Override
+    public Decision shouldAutoExpandToNode(IndexMetadata indexMetadata, DiscoveryNode node, RoutingAllocation allocation) {
         Decision decision = shouldClusterFilter(node, allocation);
         if (decision != null) return decision;
 
-        decision = shouldIndexFilter(allocation.metaData().getIndexSafe(shardRouting.index()), node, allocation);
+        decision = shouldIndexFilter(indexMetadata, node, allocation);
         if (decision != null) return decision;
 
         return allocation.decision(Decision.YES, NAME, "node passes include/exclude/require filters");
     }
 
-    private Decision shouldFilter(IndexMetaData indexMd, RoutingNode node, RoutingAllocation allocation) {
+    private Decision shouldFilter(ShardRouting shardRouting, DiscoveryNode node, RoutingAllocation allocation) {
+        Decision decision = shouldClusterFilter(node, allocation);
+        if (decision != null) return decision;
+
+        decision = shouldIndexFilter(allocation.metadata().getIndexSafe(shardRouting.index()), node, allocation);
+        if (decision != null) return decision;
+
+        return allocation.decision(Decision.YES, NAME, "node passes include/exclude/require filters");
+    }
+
+    private Decision shouldFilter(IndexMetadata indexMd, DiscoveryNode node, RoutingAllocation allocation) {
         Decision decision = shouldClusterFilter(node, allocation);
         if (decision != null) return decision;
 
@@ -142,43 +154,47 @@ public class FilterAllocationDecider extends AllocationDecider {
         return allocation.decision(Decision.YES, NAME, "node passes include/exclude/require filters");
     }
 
-    private Decision shouldIndexFilter(IndexMetaData indexMd, RoutingNode node, RoutingAllocation allocation) {
-        if (indexMd.requireFilters() != null) {
-            if (indexMd.requireFilters().match(node.node()) == false) {
+    private Decision shouldIndexFilter(IndexMetadata indexMd, DiscoveryNode node, RoutingAllocation allocation) {
+        DiscoveryNodeFilters indexRequireFilters = DiscoveryNodeFilters.trimTier(indexMd.requireFilters());
+        DiscoveryNodeFilters indexIncludeFilters = DiscoveryNodeFilters.trimTier(indexMd.includeFilters());
+        DiscoveryNodeFilters indexExcludeFilters = DiscoveryNodeFilters.trimTier(indexMd.excludeFilters());
+
+        if (indexRequireFilters != null) {
+            if (indexRequireFilters.match(node) == false) {
                 return allocation.decision(Decision.NO, NAME, "node does not match index setting [%s] filters [%s]",
-                    IndexMetaData.INDEX_ROUTING_REQUIRE_GROUP_PREFIX, indexMd.requireFilters());
+                    IndexMetadata.INDEX_ROUTING_REQUIRE_GROUP_PREFIX, indexRequireFilters);
             }
         }
-        if (indexMd.includeFilters() != null) {
-            if (indexMd.includeFilters().match(node.node()) == false) {
+        if (indexIncludeFilters != null) {
+            if (indexIncludeFilters.match(node) == false) {
                 return allocation.decision(Decision.NO, NAME, "node does not match index setting [%s] filters [%s]",
-                    IndexMetaData.INDEX_ROUTING_INCLUDE_GROUP_PREFIX, indexMd.includeFilters());
+                    IndexMetadata.INDEX_ROUTING_INCLUDE_GROUP_PREFIX, indexIncludeFilters);
             }
         }
-        if (indexMd.excludeFilters() != null) {
-            if (indexMd.excludeFilters().match(node.node())) {
+        if (indexExcludeFilters != null) {
+            if (indexExcludeFilters.match(node)) {
                 return allocation.decision(Decision.NO, NAME, "node matches index setting [%s] filters [%s]",
-                    IndexMetaData.INDEX_ROUTING_EXCLUDE_GROUP_SETTING.getKey(), indexMd.excludeFilters());
+                    IndexMetadata.INDEX_ROUTING_EXCLUDE_GROUP_SETTING.getKey(), indexExcludeFilters);
             }
         }
         return null;
     }
 
-    private Decision shouldClusterFilter(RoutingNode node, RoutingAllocation allocation) {
+    private Decision shouldClusterFilter(DiscoveryNode node, RoutingAllocation allocation) {
         if (clusterRequireFilters != null) {
-            if (clusterRequireFilters.match(node.node()) == false) {
+            if (clusterRequireFilters.match(node) == false) {
                 return allocation.decision(Decision.NO, NAME, "node does not match cluster setting [%s] filters [%s]",
                     CLUSTER_ROUTING_REQUIRE_GROUP_PREFIX, clusterRequireFilters);
             }
         }
         if (clusterIncludeFilters != null) {
-            if (clusterIncludeFilters.match(node.node()) == false) {
+            if (clusterIncludeFilters.match(node) == false) {
                 return allocation.decision(Decision.NO, NAME, "node does not cluster setting [%s] filters [%s]",
                     CLUSTER_ROUTING_INCLUDE_GROUP_PREFIX, clusterIncludeFilters);
             }
         }
         if (clusterExcludeFilters != null) {
-            if (clusterExcludeFilters.match(node.node())) {
+            if (clusterExcludeFilters.match(node)) {
                 return allocation.decision(Decision.NO, NAME, "node matches cluster setting [%s] filters [%s]",
                     CLUSTER_ROUTING_EXCLUDE_GROUP_PREFIX, clusterExcludeFilters);
             }
@@ -187,12 +203,12 @@ public class FilterAllocationDecider extends AllocationDecider {
     }
 
     private void setClusterRequireFilters(Map<String, String> filters) {
-        clusterRequireFilters = DiscoveryNodeFilters.buildFromKeyValue(AND, filters);
+        clusterRequireFilters = DiscoveryNodeFilters.trimTier(DiscoveryNodeFilters.buildFromKeyValue(AND, filters));
     }
     private void setClusterIncludeFilters(Map<String, String> filters) {
-        clusterIncludeFilters = DiscoveryNodeFilters.buildFromKeyValue(OR, filters);
+        clusterIncludeFilters = DiscoveryNodeFilters.trimTier(DiscoveryNodeFilters.buildFromKeyValue(OR, filters));
     }
     private void setClusterExcludeFilters(Map<String, String> filters) {
-        clusterExcludeFilters = DiscoveryNodeFilters.buildFromKeyValue(OR, filters);
+        clusterExcludeFilters = DiscoveryNodeFilters.trimTier(DiscoveryNodeFilters.buildFromKeyValue(OR, filters));
     }
 }

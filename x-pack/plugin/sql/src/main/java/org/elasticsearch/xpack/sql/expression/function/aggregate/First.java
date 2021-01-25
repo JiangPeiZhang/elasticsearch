@@ -5,9 +5,9 @@
  */
 package org.elasticsearch.xpack.sql.expression.function.aggregate;
 
-import org.elasticsearch.xpack.sql.expression.Expression;
-import org.elasticsearch.xpack.sql.tree.NodeInfo;
-import org.elasticsearch.xpack.sql.tree.Source;
+import org.elasticsearch.xpack.ql.expression.Expression;
+import org.elasticsearch.xpack.ql.tree.NodeInfo;
+import org.elasticsearch.xpack.ql.tree.Source;
 
 import java.util.List;
 
@@ -27,9 +27,6 @@ public class First extends TopHits {
 
     @Override
     public First replaceChildren(List<Expression> newChildren) {
-        if (newChildren.size() > 2) {
-            throw new IllegalArgumentException("expected one or two children but received [" + newChildren.size() + "]");
-        }
         return new First(source(), newChildren.get(0), newChildren.size() > 1 ? newChildren.get(1) : null);
     }
 }

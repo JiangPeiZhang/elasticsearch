@@ -37,8 +37,8 @@ public class SpanTermQueryBuilderTests extends AbstractTermQueryTestCase<SpanTer
 
     @Override
     protected SpanTermQueryBuilder doCreateTestQueryBuilder() {
-        String fieldName = randomFrom(STRING_FIELD_NAME,
-            STRING_ALIAS_FIELD_NAME,
+        String fieldName = randomFrom(TEXT_FIELD_NAME,
+            TEXT_ALIAS_FIELD_NAME,
             randomAlphaOfLengthBetween(1, 10));
 
         Object value;
@@ -58,14 +58,14 @@ public class SpanTermQueryBuilderTests extends AbstractTermQueryTestCase<SpanTer
     }
 
     @Override
-    protected void doAssertLuceneQuery(SpanTermQueryBuilder queryBuilder, Query query, QueryShardContext context) throws IOException {
+    protected void doAssertLuceneQuery(SpanTermQueryBuilder queryBuilder, Query query, SearchExecutionContext context) throws IOException {
         assertThat(query, instanceOf(SpanTermQuery.class));
         SpanTermQuery spanTermQuery = (SpanTermQuery) query;
 
         String expectedFieldName = expectedFieldName(queryBuilder.fieldName);
         assertThat(spanTermQuery.getTerm().field(), equalTo(expectedFieldName));
 
-        MappedFieldType mapper = context.fieldMapper(queryBuilder.fieldName());
+        MappedFieldType mapper = context.getFieldType(queryBuilder.fieldName());
         if (mapper != null) {
             Term term = ((TermQuery) mapper.termQuery(queryBuilder.value(), null)).getTerm();
             assertThat(spanTermQuery.getTerm(), equalTo(term));
@@ -125,8 +125,8 @@ public class SpanTermQueryBuilderTests extends AbstractTermQueryTestCase<SpanTer
         assertEquals("[span_term] query doesn't support multiple fields, found [message1] and [message2]", e.getMessage());
     }
 
-    public void testWithMetaDataField() throws IOException {
-        QueryShardContext context = createShardContext();
+    public void testWithMetadataField() throws IOException {
+        SearchExecutionContext context = createSearchExecutionContext();
         for (String field : new String[]{"field1", "field2"}) {
             SpanTermQueryBuilder spanTermQueryBuilder = new SpanTermQueryBuilder(field, "toto");
             Query query = spanTermQueryBuilder.toQuery(context);

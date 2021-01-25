@@ -54,11 +54,13 @@ import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
@@ -80,15 +82,16 @@ public class KeyStoreWrapperTests extends ESTestCase {
     }
 
     public void testFileSettingExhaustiveBytes() throws Exception {
+        final char[] password = getPossibleKeystorePassword();
         KeyStoreWrapper keystore = KeyStoreWrapper.create();
         byte[] bytes = new byte[256];
         for (int i = 0; i < 256; ++i) {
-            bytes[i] = (byte)i;
+            bytes[i] = (byte) i;
         }
         keystore.setFile("foo", bytes);
-        keystore.save(env.configFile(), new char[0]);
+        keystore.save(env.configFile(), password);
         keystore = KeyStoreWrapper.load(env.configFile());
-        keystore.decrypt(new char[0]);
+        keystore.decrypt(password);
         try (InputStream stream = keystore.getFile("foo")) {
             for (int i = 0; i < 256; ++i) {
                 int got = stream.read();
@@ -107,12 +110,51 @@ public class KeyStoreWrapperTests extends ESTestCase {
     }
 
     public void testDecryptKeyStoreWithWrongPassword() throws Exception {
+        final char[] realPassword = getPossibleKeystorePassword();
+        final char[] invalidPassword;
+        if (realPassword.length < 1) {
+            invalidPassword = new char[] { 'i', 'n', 'v', 'a', 'l', 'i', 'd' };
+        } else {
+            invalidPassword = Arrays.copyOf(realPassword, realPassword.length + 1);
+            invalidPassword[realPassword.length] = '#';
+        }
         KeyStoreWrapper keystore = KeyStoreWrapper.create();
-        keystore.save(env.configFile(), new char[0]);
+        keystore.save(env.configFile(), realPassword);
         final KeyStoreWrapper loadedkeystore = KeyStoreWrapper.load(env.configFile());
-        final SecurityException exception = expectThrows(SecurityException.class,
-            () -> loadedkeystore.decrypt(new char[]{'i', 'n', 'v', 'a', 'l', 'i', 'd'}));
-        assertThat(exception.getMessage(), containsString("Keystore has been corrupted or tampered with"));
+        final SecurityException exception = expectThrows(SecurityException.class, () -> loadedkeystore.decrypt(invalidPassword));
+        if (inFipsJvm()) {
+            assertThat(
+                exception.getMessage(),
+                anyOf(
+                    containsString("Provided keystore password was incorrect"),
+                    containsString("Keystore has been corrupted or tampered with")
+                )
+            );
+        } else {
+            assertThat(exception.getMessage(), containsString("Provided keystore password was incorrect"));
+        }
+    }
+
+    public void testDecryptKeyStoreWithShortPasswordInFips() throws Exception {
+        assumeTrue("This should run only in FIPS mode", inFipsJvm());
+        KeyStoreWrapper keystore = KeyStoreWrapper.create();
+        keystore.save(env.configFile(), "alongenoughpassword".toCharArray());
+        final KeyStoreWrapper loadedkeystore = KeyStoreWrapper.load(env.configFile());
+        final GeneralSecurityException exception = expectThrows(
+            GeneralSecurityException.class,
+            () -> loadedkeystore.decrypt("shortpwd".toCharArray()) // shorter than 14 characters
+        );
+        assertThat(exception.getMessage(), containsString("Error generating an encryption key from the provided password"));
+    }
+
+    public void testCreateKeyStoreWithShortPasswordInFips() throws Exception {
+        assumeTrue("This should run only in FIPS mode", inFipsJvm());
+        KeyStoreWrapper keystore = KeyStoreWrapper.create();
+        final GeneralSecurityException exception = expectThrows(
+            GeneralSecurityException.class,
+            () -> keystore.save(env.configFile(), "shortpwd".toCharArray()) // shorter than 14 characters
+        );
+        assertThat(exception.getMessage(), containsString("Error generating an encryption key from the provided password"));
     }
 
     public void testCannotReadStringFromClosedKeystore() throws Exception {
@@ -123,8 +165,10 @@ public class KeyStoreWrapperTests extends ESTestCase {
         keystore.close();
 
         assertThat(keystore.getSettingNames(), Matchers.hasItem(KeyStoreWrapper.SEED_SETTING.getKey()));
-        final IllegalStateException exception = expectThrows(IllegalStateException.class,
-            () -> keystore.getString(KeyStoreWrapper.SEED_SETTING.getKey()));
+        final IllegalStateException exception = expectThrows(
+            IllegalStateException.class,
+            () -> keystore.getString(KeyStoreWrapper.SEED_SETTING.getKey())
+        );
         assertThat(exception.getMessage(), containsString("closed"));
     }
 
@@ -150,18 +194,20 @@ public class KeyStoreWrapperTests extends ESTestCase {
     }
 
     public void testUpgradeNoop() throws Exception {
+        final char[] password = getPossibleKeystorePassword();
         KeyStoreWrapper keystore = KeyStoreWrapper.create();
         SecureString seed = keystore.getString(KeyStoreWrapper.SEED_SETTING.getKey());
-        keystore.save(env.configFile(), new char[0]);
+        keystore.save(env.configFile(), password);
         // upgrade does not overwrite seed
-        KeyStoreWrapper.upgrade(keystore, env.configFile(), new char[0]);
+        KeyStoreWrapper.upgrade(keystore, env.configFile(), password);
         assertEquals(seed.toString(), keystore.getString(KeyStoreWrapper.SEED_SETTING.getKey()).toString());
         keystore = KeyStoreWrapper.load(env.configFile());
-        keystore.decrypt(new char[0]);
+        keystore.decrypt(password);
         assertEquals(seed.toString(), keystore.getString(KeyStoreWrapper.SEED_SETTING.getKey()).toString());
     }
 
     public void testFailWhenCannotConsumeSecretStream() throws Exception {
+        assumeFalse("Cannot open unprotected keystore on FIPS JVM", inFipsJvm());
         Path configDir = env.configFile();
         SimpleFSDirectory directory = new SimpleFSDirectory(configDir);
         try (IndexOutput indexOutput = directory.createOutput("elasticsearch.keystore", IOContext.DEFAULT)) {
@@ -190,6 +236,7 @@ public class KeyStoreWrapperTests extends ESTestCase {
     }
 
     public void testFailWhenCannotConsumeEncryptedBytesStream() throws Exception {
+        assumeFalse("Cannot open unprotected keystore on FIPS JVM", inFipsJvm());
         Path configDir = env.configFile();
         SimpleFSDirectory directory = new SimpleFSDirectory(configDir);
         try (IndexOutput indexOutput = directory.createOutput("elasticsearch.keystore", IOContext.DEFAULT)) {
@@ -219,6 +266,7 @@ public class KeyStoreWrapperTests extends ESTestCase {
     }
 
     public void testFailWhenSecretStreamNotConsumed() throws Exception {
+        assumeFalse("Cannot open unprotected keystore on FIPS JVM", inFipsJvm());
         Path configDir = env.configFile();
         SimpleFSDirectory directory = new SimpleFSDirectory(configDir);
         try (IndexOutput indexOutput = directory.createOutput("elasticsearch.keystore", IOContext.DEFAULT)) {
@@ -246,6 +294,7 @@ public class KeyStoreWrapperTests extends ESTestCase {
     }
 
     public void testFailWhenEncryptedBytesStreamIsNotConsumed() throws Exception {
+        assumeFalse("Cannot open unprotected keystore on FIPS JVM", inFipsJvm());
         Path configDir = env.configFile();
         SimpleFSDirectory directory = new SimpleFSDirectory(configDir);
         try (IndexOutput indexOutput = directory.createOutput("elasticsearch.keystore", IOContext.DEFAULT)) {
@@ -292,9 +341,13 @@ public class KeyStoreWrapperTests extends ESTestCase {
         output.write(secret_value);
     }
 
-    private void possiblyAlterEncryptedBytes(IndexOutput indexOutput, byte[] salt, byte[] iv, byte[] encryptedBytes, int
-        truncEncryptedDataLength)
-        throws Exception {
+    private void possiblyAlterEncryptedBytes(
+        IndexOutput indexOutput,
+        byte[] salt,
+        byte[] iv,
+        byte[] encryptedBytes,
+        int truncEncryptedDataLength
+    ) throws Exception {
         indexOutput.writeInt(4 + salt.length + 4 + iv.length + 4 + encryptedBytes.length);
         indexOutput.writeInt(salt.length);
         indexOutput.writeBytes(salt, salt.length);
@@ -305,14 +358,15 @@ public class KeyStoreWrapperTests extends ESTestCase {
     }
 
     public void testUpgradeAddsSeed() throws Exception {
+        final char[] password = getPossibleKeystorePassword();
         KeyStoreWrapper keystore = KeyStoreWrapper.create();
         keystore.remove(KeyStoreWrapper.SEED_SETTING.getKey());
-        keystore.save(env.configFile(), new char[0]);
-        KeyStoreWrapper.upgrade(keystore, env.configFile(), new char[0]);
+        keystore.save(env.configFile(), password);
+        KeyStoreWrapper.upgrade(keystore, env.configFile(), password);
         SecureString seed = keystore.getString(KeyStoreWrapper.SEED_SETTING.getKey());
         assertNotNull(seed);
         keystore = KeyStoreWrapper.load(env.configFile());
-        keystore.decrypt(new char[0]);
+        keystore.decrypt(password);
         assertEquals(seed.toString(), keystore.getString(KeyStoreWrapper.SEED_SETTING.getKey()).toString());
     }
 
@@ -387,7 +441,7 @@ public class KeyStoreWrapperTests extends ESTestCase {
             byte[] base64Bytes = Base64.getEncoder().encode(fileBytes);
             char[] chars = new char[base64Bytes.length];
             for (int i = 0; i < chars.length; ++i) {
-                chars[i] = (char)base64Bytes[i]; // PBE only stores the lower 8 bits, so this narrowing is ok
+                chars[i] = (char) base64Bytes[i]; // PBE only stores the lower 8 bits, so this narrowing is ok
             }
             secretKey = secretFactory.generateSecret(new PBEKeySpec(chars));
             keystore.setEntry("file_setting", new KeyStore.SecretKeyEntry(secretKey), protectionParameter);
@@ -416,17 +470,18 @@ public class KeyStoreWrapperTests extends ESTestCase {
     }
 
     public void testStringAndFileDistinction() throws Exception {
+        final char[] password = getPossibleKeystorePassword();
         final KeyStoreWrapper wrapper = KeyStoreWrapper.create();
         wrapper.setString("string_setting", "string_value".toCharArray());
         final Path temp = createTempDir();
         Files.writeString(temp.resolve("file_setting"), "file_value", StandardCharsets.UTF_8);
         wrapper.setFile("file_setting", Files.readAllBytes(temp.resolve("file_setting")));
-        wrapper.save(env.configFile(), new char[0]);
+        wrapper.save(env.configFile(), password);
         wrapper.close();
 
         final KeyStoreWrapper afterSave = KeyStoreWrapper.load(env.configFile());
         assertNotNull(afterSave);
-        afterSave.decrypt(new char[0]);
+        afterSave.decrypt(password);
         assertThat(afterSave.getSettingNames(), equalTo(Set.of("keystore.seed", "string_setting", "file_setting")));
         assertThat(afterSave.getString("string_setting"), equalTo("string_value"));
         assertThat(toByteArray(afterSave.getFile("string_setting")), equalTo("string_value".getBytes(StandardCharsets.UTF_8)));
@@ -435,10 +490,13 @@ public class KeyStoreWrapperTests extends ESTestCase {
     }
 
     public void testLegacyV3() throws GeneralSecurityException, IOException {
+        assumeFalse("Cannot open unprotected keystore on FIPS JVM", inFipsJvm());
         final Path configDir = createTempDir();
         final Path keystore = configDir.resolve("elasticsearch.keystore");
-        try (InputStream is = KeyStoreWrapperTests.class.getResourceAsStream("/format-v3-elasticsearch.keystore");
-             OutputStream os = Files.newOutputStream(keystore)) {
+        try (
+            InputStream is = KeyStoreWrapperTests.class.getResourceAsStream("/format-v3-elasticsearch.keystore");
+            OutputStream os = Files.newOutputStream(keystore)
+        ) {
             final byte[] buffer = new byte[4096];
             int readBytes;
             while ((readBytes = is.read(buffer)) > 0) {
@@ -466,4 +524,11 @@ public class KeyStoreWrapperTests extends ESTestCase {
         return os.toByteArray();
     }
 
+    public static char[] getPossibleKeystorePassword() {
+        if (inFipsJvm()) {
+            // FIPS Mode JVMs require a password of at least 112 bits for the ES keystore
+            return randomAlphaOfLengthBetween(14, 24).toCharArray();
+        }
+        return randomBoolean() ? new char[0] : randomAlphaOfLengthBetween(4, 24).toCharArray();
+    }
 }

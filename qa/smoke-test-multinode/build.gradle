@@ -20,18 +20,21 @@
 apply plugin: 'elasticsearch.testclusters'
 apply plugin: 'elasticsearch.standalone-rest-test'
 apply plugin: 'elasticsearch.rest-test'
+apply plugin: 'elasticsearch.rest-resources'
 
-integTest {
-  includePackaged = true
+restResources {
+  restTests {
+    includeCore '*'
+  }
 }
 
 File repo = file("$buildDir/testclusters/repo")
-testClusters.integTest {
+testClusters.matching { it.name == "integTest" }.configureEach {
   numberOfNodes = 2
   setting 'path.repo', repo.absolutePath
 }
 
-integTest.runner {
+tasks.named("integTest").configure {
   doFirst {
     project.delete(repo)
     repo.mkdirs()

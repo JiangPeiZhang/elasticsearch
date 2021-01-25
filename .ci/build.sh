@@ -10,9 +10,10 @@ if [ -f /proc/cpuinfo ] ; then
    MAX_WORKERS=`grep '^cpu\scores' /proc/cpuinfo  | uniq | sed 's/\s\+//g' |  cut -d':' -f 2`
 else
    if [[ "$OSTYPE" == "darwin"* ]]; then
-      MAX_WORKERS=`sysctl -n hw.physicalcpu | sed 's/\s\+//g'`
-      # Looks like it's too much for our workers so reduce it further
-      MAX_WORKERS=$(($MAX_WORKERS/2))
+      # Parallel is disabled at  this time (eventually set to 1) due to errors on the Mac workers
+      # We'll have to do more testing to see if this can be re-enabled or what the proper value is.
+      # MAX_WORKERS=`sysctl -n hw.physicalcpu | sed 's/\s\+//g'`
+      MAX_WORKERS=2
    else
       echo "Unsupported OS Type: $OSTYPE"
       exit 1
@@ -24,7 +25,6 @@ if pwd | grep -v -q ^/dev/shm ; then
    MAX_WORKERS=$(($MAX_WORKERS*2/3))
 fi
 
-export GRADLE_OPTS="-XX:+HeapDumpOnOutOfMemoryError -Xmx128m -Xms128m"
 set -e
 ./gradlew --parallel --scan \
   -Dorg.elasticsearch.build.cache.url=https://gradle-enterprise.elastic.co/cache/ \

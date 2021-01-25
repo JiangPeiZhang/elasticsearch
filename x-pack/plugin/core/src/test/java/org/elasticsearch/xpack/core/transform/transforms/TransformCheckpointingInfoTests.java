@@ -17,12 +17,14 @@ import java.time.Instant;
 
 public class TransformCheckpointingInfoTests extends AbstractSerializingTransformTestCase<TransformCheckpointingInfo> {
 
-    public static TransformCheckpointingInfo randomDataFrameTransformCheckpointingInfo() {
+    public static TransformCheckpointingInfo randomTransformCheckpointingInfo() {
         return new TransformCheckpointingInfo(
-            TransformCheckpointStatsTests.randomDataFrameTransformCheckpointStats(),
-            TransformCheckpointStatsTests.randomDataFrameTransformCheckpointStats(),
+            TransformCheckpointStatsTests.randomTransformCheckpointStats(),
+            TransformCheckpointStatsTests.randomTransformCheckpointStats(),
             randomNonNegativeLong(),
-            randomBoolean() ? null : Instant.ofEpochMilli(randomLongBetween(1, 100000)));
+            randomBoolean() ? null : Instant.ofEpochMilli(randomLongBetween(1, 100000)),
+            randomBoolean() ? null : Instant.ofEpochMilli(randomLongBetween(1, 100000))
+        );
     }
 
     @Override
@@ -32,7 +34,7 @@ public class TransformCheckpointingInfoTests extends AbstractSerializingTransfor
 
     @Override
     protected TransformCheckpointingInfo createTestInstance() {
-        return randomDataFrameTransformCheckpointingInfo();
+        return randomTransformCheckpointingInfo();
     }
 
     @Override
@@ -45,8 +47,10 @@ public class TransformCheckpointingInfoTests extends AbstractSerializingTransfor
             TransformCheckpointStats.EMPTY,
             TransformCheckpointStats.EMPTY,
             randomNonNegativeLong(),
-            // changesLastDetectedAt is not serialized to past values, so when it is pulled back in, it will be null
-            null);
+            // changesLastDetectedAt, lastSearchTime is not serialized to past values, so when it is pulled back in, it will be null
+            null,
+            null
+        );
         try (BytesStreamOutput output = new BytesStreamOutput()) {
             output.setVersion(Version.V_7_4_0);
             checkpointingInfo.writeTo(output);

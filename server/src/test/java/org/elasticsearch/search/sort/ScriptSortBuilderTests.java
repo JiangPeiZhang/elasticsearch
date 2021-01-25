@@ -31,12 +31,12 @@ import org.elasticsearch.index.fielddata.IndexFieldData.XFieldComparatorSource;
 import org.elasticsearch.index.fielddata.IndexFieldData.XFieldComparatorSource.Nested;
 import org.elasticsearch.index.fielddata.fieldcomparator.BytesRefFieldComparatorSource;
 import org.elasticsearch.index.fielddata.fieldcomparator.DoubleValuesComparatorSource;
-import org.elasticsearch.index.mapper.TypeFieldMapper;
+import org.elasticsearch.index.mapper.NestedPathFieldMapper;
 import org.elasticsearch.index.query.MatchNoneQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.QueryRewriteContext;
-import org.elasticsearch.index.query.QueryShardContext;
+import org.elasticsearch.index.query.SearchExecutionContext;
 import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.script.Script;
 import org.elasticsearch.script.ScriptType;
@@ -228,7 +228,7 @@ public class ScriptSortBuilderTests extends AbstractSortTestCase<ScriptSortBuild
             parser.nextToken();
 
             XContentParseException e = expectThrows(XContentParseException.class, () -> ScriptSortBuilder.fromXContent(parser, null));
-            assertEquals("[1:15] [_script] unknown field [bad_field], parser not found", e.getMessage());
+            assertEquals("[1:15] [_script] unknown field [bad_field]", e.getMessage());
         }
     }
 
@@ -241,7 +241,7 @@ public class ScriptSortBuilderTests extends AbstractSortTestCase<ScriptSortBuild
             parser.nextToken();
 
             XContentParseException e = expectThrows(XContentParseException.class, () -> ScriptSortBuilder.fromXContent(parser, null));
-            assertEquals("[1:15] [_script] unknown field [bad_field], parser not found", e.getMessage());
+            assertEquals("[1:15] [_script] unknown field [bad_field]", e.getMessage());
         }
     }
 
@@ -271,11 +271,11 @@ public class ScriptSortBuilderTests extends AbstractSortTestCase<ScriptSortBuild
      * Test that the sort builder mode gets transferred correctly to the SortField
      */
     public void testMultiValueMode() throws IOException {
-        QueryShardContext shardContextMock = createMockShardContext();
+        SearchExecutionContext searchExecutionContext = createMockSearchExecutionContext();
         for (SortMode mode : SortMode.values()) {
             ScriptSortBuilder sortBuilder = new ScriptSortBuilder(mockScript(MOCK_SCRIPT_NAME), ScriptSortType.NUMBER);
             sortBuilder.sortMode(mode);
-            SortField sortField = sortBuilder.build(shardContextMock).field;
+            SortField sortField = sortBuilder.build(searchExecutionContext).field;
             assertThat(sortField.getComparatorSource(), instanceOf(XFieldComparatorSource.class));
             XFieldComparatorSource comparatorSource = (XFieldComparatorSource) sortField.getComparatorSource();
             assertEquals(MultiValueMode.fromString(mode.toString()), comparatorSource.sortMode());
@@ -284,14 +284,14 @@ public class ScriptSortBuilderTests extends AbstractSortTestCase<ScriptSortBuild
         // check that without mode set, order ASC sets mode to MIN, DESC to MAX
         ScriptSortBuilder sortBuilder = new ScriptSortBuilder(mockScript(MOCK_SCRIPT_NAME), ScriptSortType.NUMBER);
         sortBuilder.order(SortOrder.ASC);
-        SortField sortField = sortBuilder.build(shardContextMock).field;
+        SortField sortField = sortBuilder.build(searchExecutionContext).field;
         assertThat(sortField.getComparatorSource(), instanceOf(XFieldComparatorSource.class));
         XFieldComparatorSource comparatorSource = (XFieldComparatorSource) sortField.getComparatorSource();
         assertEquals(MultiValueMode.MIN, comparatorSource.sortMode());
 
         sortBuilder = new ScriptSortBuilder(mockScript(MOCK_SCRIPT_NAME), ScriptSortType.NUMBER);
         sortBuilder.order(SortOrder.DESC);
-        sortField = sortBuilder.build(shardContextMock).field;
+        sortField = sortBuilder.build(searchExecutionContext).field;
         assertThat(sortField.getComparatorSource(), instanceOf(XFieldComparatorSource.class));
         comparatorSource = (XFieldComparatorSource) sortField.getComparatorSource();
         assertEquals(MultiValueMode.MAX, comparatorSource.sortMode());
@@ -302,11 +302,11 @@ public class ScriptSortBuilderTests extends AbstractSortTestCase<ScriptSortBuild
      */
     public void testBuildCorrectComparatorType() throws IOException {
         ScriptSortBuilder sortBuilder = new ScriptSortBuilder(mockScript(MOCK_SCRIPT_NAME), ScriptSortType.STRING);
-        SortField sortField = sortBuilder.build(createMockShardContext()).field;
+        SortField sortField = sortBuilder.build(createMockSearchExecutionContext()).field;
         assertThat(sortField.getComparatorSource(), instanceOf(BytesRefFieldComparatorSource.class));
 
         sortBuilder = new ScriptSortBuilder(mockScript(MOCK_SCRIPT_NAME), ScriptSortType.NUMBER);
-        sortField = sortBuilder.build(createMockShardContext()).field;
+        sortField = sortBuilder.build(createMockSearchExecutionContext()).field;
         assertThat(sortField.getComparatorSource(), instanceOf(DoubleValuesComparatorSource.class));
     }
 
@@ -314,11 +314,11 @@ public class ScriptSortBuilderTests extends AbstractSortTestCase<ScriptSortBuild
      * Test that the sort builder nested object gets created in the SortField
      */
     public void testBuildNested() throws IOException {
-        QueryShardContext shardContextMock = createMockShardContext();
+        SearchExecutionContext searchExecutionContext = createMockSearchExecutionContext();
 
         ScriptSortBuilder sortBuilder = new ScriptSortBuilder(mockScript(MOCK_SCRIPT_NAME), ScriptSortType.NUMBER)
                 .setNestedSort(new NestedSortBuilder("path").setFilter(QueryBuilders.matchAllQuery()));
-        SortField sortField = sortBuilder.build(shardContextMock).field;
+        SortField sortField = sortBuilder.build(searchExecutionContext).field;
         assertThat(sortField.getComparatorSource(), instanceOf(XFieldComparatorSource.class));
         XFieldComparatorSource comparatorSource = (XFieldComparatorSource) sortField.getComparatorSource();
         Nested nested = comparatorSource.nested();
@@ -327,17 +327,17 @@ public class ScriptSortBuilderTests extends AbstractSortTestCase<ScriptSortBuild
 
         sortBuilder = new ScriptSortBuilder(mockScript(MOCK_SCRIPT_NAME), ScriptSortType.NUMBER)
             .setNestedSort(new NestedSortBuilder("path"));
-        sortField = sortBuilder.build(shardContextMock).field;
+        sortField = sortBuilder.build(searchExecutionContext).field;
         assertThat(sortField.getComparatorSource(), instanceOf(XFieldComparatorSource.class));
         comparatorSource = (XFieldComparatorSource) sortField.getComparatorSource();
         nested = comparatorSource.nested();
         assertNotNull(nested);
-        assertEquals(new TermQuery(new Term(TypeFieldMapper.NAME, "__path")), nested.getInnerQuery());
+        assertEquals(new TermQuery(new Term(NestedPathFieldMapper.NAME, "path")), nested.getInnerQuery());
 
         sortBuilder = new ScriptSortBuilder(mockScript(MOCK_SCRIPT_NAME), ScriptSortType.NUMBER)
             .setNestedSort(new NestedSortBuilder("path")
                 .setFilter(QueryBuilders.matchAllQuery()));
-        sortField = sortBuilder.build(shardContextMock).field;
+        sortField = sortBuilder.build(searchExecutionContext).field;
         assertThat(sortField.getComparatorSource(), instanceOf(XFieldComparatorSource.class));
         comparatorSource = (XFieldComparatorSource) sortField.getComparatorSource();
         nested = comparatorSource.nested();
@@ -352,13 +352,13 @@ public class ScriptSortBuilderTests extends AbstractSortTestCase<ScriptSortBuild
         ScriptSortBuilder sortBuilder = new ScriptSortBuilder(mockScript("something"), ScriptSortType.STRING);
         RangeQueryBuilder rangeQuery = new RangeQueryBuilder("fieldName") {
             @Override
-            public QueryBuilder doRewrite(QueryRewriteContext queryShardContext) throws IOException {
+            public QueryBuilder doRewrite(QueryRewriteContext queryRewriteContext) throws IOException {
                 return new MatchNoneQueryBuilder();
             }
         };
         sortBuilder.setNestedSort(new NestedSortBuilder("path").setFilter(rangeQuery));
         ScriptSortBuilder rewritten = sortBuilder
-                .rewrite(createMockShardContext());
+                .rewrite(createMockSearchExecutionContext());
         assertNotSame(rangeQuery, rewritten.getNestedSort().getFilter());
     }
 
@@ -369,13 +369,13 @@ public class ScriptSortBuilderTests extends AbstractSortTestCase<ScriptSortBuild
         ScriptSortBuilder sortBuilder = new ScriptSortBuilder(mockScript("something"), ScriptSortType.STRING);
         RangeQueryBuilder rangeQuery = new RangeQueryBuilder("fieldName") {
             @Override
-            public QueryBuilder doRewrite(QueryRewriteContext queryShardContext) throws IOException {
+            public QueryBuilder doRewrite(QueryRewriteContext queryRewriteContext) throws IOException {
                 return new MatchNoneQueryBuilder();
             }
         };
         sortBuilder.setNestedSort(new NestedSortBuilder("path").setFilter(rangeQuery));
         ScriptSortBuilder rewritten = sortBuilder
-                .rewrite(createMockShardContext());
+                .rewrite(createMockSearchExecutionContext());
         assertNotSame(rangeQuery, rewritten.getNestedSort().getFilter());
     }
 

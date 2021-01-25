@@ -47,7 +47,6 @@ import org.elasticsearch.action.admin.indices.close.CloseIndexRequest;
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.elasticsearch.action.admin.indices.flush.FlushRequest;
-import org.elasticsearch.action.admin.indices.flush.SyncedFlushRequest;
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest;
 import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest;
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest;
@@ -55,7 +54,6 @@ import org.elasticsearch.action.admin.indices.refresh.RefreshRequest;
 import org.elasticsearch.action.admin.indices.segments.IndicesSegmentsRequest;
 import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest;
 import org.elasticsearch.action.admin.indices.shards.IndicesShardStoresRequest;
-import org.elasticsearch.action.admin.indices.upgrade.post.UpgradeRequest;
 import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.get.GetRequest;
@@ -249,17 +247,6 @@ public class Requests {
     }
 
     /**
-     * Creates a synced flush indices request.
-     *
-     * @param indices The indices to sync flush. Use {@code null} or {@code _all} to execute against all indices
-     * @return The synced flush request
-     * @see org.elasticsearch.client.IndicesAdminClient#syncedFlush(SyncedFlushRequest)
-     */
-    public static SyncedFlushRequest syncedFlushRequest(String... indices) {
-        return new SyncedFlushRequest(indices);
-    }
-
-    /**
      * Creates a force merge request.
      *
      * @param indices The indices to force merge. Use {@code null} or {@code _all} to execute against all indices
@@ -268,17 +255,6 @@ public class Requests {
      */
     public static ForceMergeRequest forceMergeRequest(String... indices) {
         return new ForceMergeRequest(indices);
-    }
-
-    /**
-     * Creates an upgrade request.
-     *
-     * @param indices The indices to upgrade. Use {@code null} or {@code _all} to execute against all indices
-     * @return The upgrade request
-     * @see org.elasticsearch.client.IndicesAdminClient#upgrade(UpgradeRequest)
-     */
-    public static UpgradeRequest upgradeRequest(String... indices) {
-        return new UpgradeRequest(indices);
     }
 
     /**
@@ -514,14 +490,14 @@ public class Requests {
     }
 
     /**
-     * Deletes a snapshot
+     * Deletes snapshots
      *
-     * @param snapshot   snapshot name
+     * @param snapshots  snapshot names
      * @param repository repository name
      * @return delete snapshot request
      */
-    public static DeleteSnapshotRequest deleteSnapshotRequest(String repository, String snapshot) {
-        return new DeleteSnapshotRequest(repository, snapshot);
+    public static DeleteSnapshotRequest deleteSnapshotRequest(String repository, String... snapshots) {
+        return new DeleteSnapshotRequest(repository, snapshots);
     }
 
     /**

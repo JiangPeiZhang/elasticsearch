@@ -135,7 +135,7 @@ public class ScriptContextInfo implements ToXContentObject, Writeable {
     }
 
     @SuppressWarnings("unchecked")
-    public static ConstructingObjectParser<ScriptContextInfo,Void> PARSER =
+    public static final ConstructingObjectParser<ScriptContextInfo,Void> PARSER =
         new ConstructingObjectParser<>("script_context_info", true,
             (m, name) -> new ScriptContextInfo((String) m[0], (List<ScriptMethodInfo>) m[1])
         );
@@ -210,7 +210,7 @@ public class ScriptContextInfo implements ToXContentObject, Writeable {
         }
 
         @SuppressWarnings("unchecked")
-        private static ConstructingObjectParser<ScriptMethodInfo,Void> PARSER =
+        private static final ConstructingObjectParser<ScriptMethodInfo,Void> PARSER =
             new ConstructingObjectParser<>("method", true,
                 (m, name) -> new ScriptMethodInfo((String) m[0], (String) m[1], (List<ParameterInfo>) m[2])
             );
@@ -271,7 +271,7 @@ public class ScriptContextInfo implements ToXContentObject, Writeable {
                 out.writeString(name);
             }
 
-            private static ConstructingObjectParser<ParameterInfo,Void> PARSER =
+            private static final ConstructingObjectParser<ParameterInfo, Void> PARSER =
                 new ConstructingObjectParser<>("parameters", true,
                     (p) -> new ParameterInfo((String)p[0], (String)p[1])
             );
@@ -329,7 +329,7 @@ public class ScriptContextInfo implements ToXContentObject, Writeable {
             Class<?>[] parameterTypes = execute.getParameterTypes();
             List<ParameterInfo> parameters = new ArrayList<>();
             if (parameterTypes.length > 0) {
-                // TODO(stu): ensure empty/no PARAMETERS if parameterTypes.length == 0?
+                // TODO: ensure empty/no PARAMETERS if parameterTypes.length == 0?
                 String parametersFieldName = "PARAMETERS";
 
                 // See ScriptClassInfo.readArgumentNamesConstant

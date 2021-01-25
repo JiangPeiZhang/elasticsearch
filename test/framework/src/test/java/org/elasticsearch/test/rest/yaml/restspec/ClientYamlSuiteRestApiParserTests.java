@@ -28,6 +28,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 
 public class ClientYamlSuiteRestApiParserTests extends AbstractClientYamlTestFragmentParserTestCase {
     public void testParseRestSpecIndexApi() throws Exception {
@@ -59,6 +60,8 @@ public class ClientYamlSuiteRestApiParserTests extends AbstractClientYamlTestFra
         restApi.getParams().forEach((key, value) -> assertThat(value, equalTo(false)));
         assertThat(restApi.isBodySupported(), equalTo(true));
         assertThat(restApi.isBodyRequired(), equalTo(true));
+        assertThat(restApi.getRequestMimeTypes(), containsInAnyOrder("application/json", "a/mime-type"));
+        assertThat(restApi.getResponseMimeTypes(), containsInAnyOrder("application/json"));
     }
 
     public void testParseRestSpecGetTemplateApi() throws Exception {
@@ -86,6 +89,8 @@ public class ClientYamlSuiteRestApiParserTests extends AbstractClientYamlTestFra
         assertThat(restApi.getParams().size(), equalTo(0));
         assertThat(restApi.isBodySupported(), equalTo(false));
         assertThat(restApi.isBodyRequired(), equalTo(false));
+        assertThat(restApi.getRequestMimeTypes(), nullValue());
+        assertThat(restApi.getResponseMimeTypes(), containsInAnyOrder("application/json"));
     }
 
     public void testParseRestSpecCountApi() throws Exception {
@@ -132,6 +137,7 @@ public class ClientYamlSuiteRestApiParserTests extends AbstractClientYamlTestFra
             "  \"count\": {\n" +
             "    \"documentation\": \"whatever\",\n" +
             "    \"stability\": \"stable\",\n" +
+            "    \"visibility\": \"public\",\n" +
             "    \"url\": {\n" +
             "      \"paths\": [ \n" +
             "        {\n" +
@@ -163,10 +169,12 @@ public class ClientYamlSuiteRestApiParserTests extends AbstractClientYamlTestFra
     private static final String REST_SPEC_COUNT_API = "{\n" +
         "  \"count\":{\n" +
         "    \"documentation\":{\n" +
-        "      \"url\":\"http://www.elastic.co/guide/en/elasticsearch/reference/master/search-count.html\",\n" +
+        "      \"url\":\"https://www.elastic.co/guide/en/elasticsearch/reference/master/search-count.html\",\n" +
         "      \"description\":\"Returns number of documents matching a query.\"\n" +
         "    },\n" +
         "    \"stability\": \"stable\",\n" +
+        "    \"visibility\": \"public\",\n" +
+        "    \"headers\": { \"accept\": [\"application/json\"] },\n" +
         "    \"url\":{\n" +
         "      \"paths\":[\n" +
         "        {\n" +
@@ -216,7 +224,8 @@ public class ClientYamlSuiteRestApiParserTests extends AbstractClientYamlTestFra
         "      }\n" +
         "    },\n" +
         "    \"body\":{\n" +
-        "      \"description\":\"A query to restrict the results specified with the Query DSL (optional)\"\n" +
+        "      \"description\":\"A query to restrict the results specified with the Query DSL (optional)\",\n" +
+        "      \"content_type\": [\"application/json\"]\n" +
         "    }\n" +
         "  }\n" +
         "}\n\n";
@@ -224,10 +233,12 @@ public class ClientYamlSuiteRestApiParserTests extends AbstractClientYamlTestFra
     private static final String REST_SPEC_GET_TEMPLATE_API = "{\n" +
         "  \"indices.get_template\":{\n" +
         "    \"documentation\":{\n" +
-        "      \"url\":\"http://www.elastic.co/guide/en/elasticsearch/reference/master/indices-templates.html\",\n" +
+        "      \"url\":\"https://www.elastic.co/guide/en/elasticsearch/reference/master/indices-templates.html\",\n" +
         "      \"description\":\"Returns an index template.\"\n" +
         "    },\n" +
+        "    \"headers\": { \"accept\": [\"application/json\"] },\n" +
         "    \"stability\": \"stable\",\n" +
+        "    \"visibility\": \"public\",\n" +
         "    \"url\":{\n" +
         "      \"paths\":[\n" +
         "        {\n" +
@@ -256,10 +267,15 @@ public class ClientYamlSuiteRestApiParserTests extends AbstractClientYamlTestFra
     private static final String REST_SPEC_INDEX_API = "{\n" +
         "  \"index\":{\n" +
         "    \"documentation\":{\n" +
-        "      \"url\":\"http://www.elastic.co/guide/en/elasticsearch/reference/master/docs-index_.html\",\n" +
+        "      \"url\":\"https://www.elastic.co/guide/en/elasticsearch/reference/master/docs-index_.html\",\n" +
         "      \"description\":\"Creates or updates a document in an index.\"\n" +
         "    },\n" +
         "    \"stability\": \"stable\",\n" +
+        "    \"visibility\": \"public\",\n" +
+        "    \"headers\": { " +
+        "       \"accept\": [\"application/json\"],\n " +
+        "       \"content_type\": [\"application/json\", \"a/mime-type\"]\n " +
+        "   },\n" +
         "    \"url\":{\n" +
         "      \"paths\":[\n" +
         "        {\n" +
@@ -336,6 +352,7 @@ public class ClientYamlSuiteRestApiParserTests extends AbstractClientYamlTestFra
         "    },\n" +
         "    \"body\":{\n" +
         "      \"description\":\"The document\",\n" +
+        "      \"content_type\": [\"application/json\"],\n" +
         "      \"required\":true\n" +
         "    }\n" +
         "  }\n" +

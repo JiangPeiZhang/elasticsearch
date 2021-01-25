@@ -34,6 +34,7 @@ import org.elasticsearch.cli.UserException;
 import org.elasticsearch.common.Randomness;
 import org.elasticsearch.common.hash.MessageDigests;
 
+import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
 import javax.crypto.CipherOutputStream;
@@ -309,7 +310,14 @@ public class KeyStoreWrapper implements SecureSettings {
     private Cipher createCipher(int opmode, char[] password, byte[] salt, byte[] iv) throws GeneralSecurityException {
         PBEKeySpec keySpec = new PBEKeySpec(password, salt, KDF_ITERS, CIPHER_KEY_BITS);
         SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(KDF_ALGO);
-        SecretKey secretKey = keyFactory.generateSecret(keySpec);
+        SecretKey secretKey;
+        try {
+            secretKey = keyFactory.generateSecret(keySpec);
+        } catch (Error e) {
+            // Security Providers might throw a subclass of Error in FIPS 140 mode, if some prerequisite like
+            // salt, iv, or password length is not met. We catch this because we don't want the JVM to exit.
+            throw new GeneralSecurityException("Error generating an encryption key from the provided password", e);
+        }
         SecretKeySpec secret = new SecretKeySpec(secretKey.getEncoded(), CIPHER_ALGO);
 
         GCMParameterSpec spec = new GCMParameterSpec(GCM_TAG_BITS, iv);
@@ -378,6 +386,9 @@ public class KeyStoreWrapper implements SecureSettings {
                 throw new SecurityException("Keystore has been corrupted or tampered with");
             }
         } catch (IOException e) {
+            if (e.getCause() instanceof AEADBadTagException) {
+                throw new SecurityException("Provided keystore password was incorrect", e);
+            }
             throw new SecurityException("Keystore has been corrupted or tampered with", e);
         }
     }
@@ -580,7 +591,9 @@ public class KeyStoreWrapper implements SecureSettings {
         }
     }
 
-    /** Set a string setting. */
+    /**
+     * Set a string setting.
+     */
     synchronized void setString(String setting, char[] value) {
         ensureOpen();
         validateSettingName(setting);
@@ -593,7 +606,9 @@ public class KeyStoreWrapper implements SecureSettings {
         }
     }
 
-    /** Set a file setting. */
+    /**
+     * Set a file setting.
+     */
     synchronized void setFile(String setting, byte[] bytes) {
         ensureOpen();
         validateSettingName(setting);
@@ -604,7 +619,9 @@ public class KeyStoreWrapper implements SecureSettings {
         }
     }
 
-    /** Remove the given setting from the keystore. */
+    /**
+     * Remove the given setting from the keystore.
+     */
     void remove(String setting) {
         ensureOpen();
         Entry oldEntry = entries.get().remove(setting);

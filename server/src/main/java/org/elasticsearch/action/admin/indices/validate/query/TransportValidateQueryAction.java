@@ -88,6 +88,7 @@ public class TransportValidateQueryAction extends TransportBroadcastAction<
             if (ex instanceof IndexNotFoundException ||
                 ex instanceof IndexClosedException) {
                 listener.onFailure(ex);
+                return;
             }
             List<QueryExplanation> explanations = new ArrayList<>();
             explanations.add(new QueryExplanation(null,
@@ -151,7 +152,7 @@ public class TransportValidateQueryAction extends TransportBroadcastAction<
     }
 
     @Override
-    protected ValidateQueryResponse newResponse(ValidateQueryRequest request, AtomicReferenceArray shardsResponses,
+    protected ValidateQueryResponse newResponse(ValidateQueryRequest request, AtomicReferenceArray<?> shardsResponses,
                                                 ClusterState clusterState) {
         int successfulShards = 0;
         int failedShards = 0;
@@ -198,7 +199,7 @@ public class TransportValidateQueryAction extends TransportBroadcastAction<
             request.nowInMillis(), request.filteringAliases());
         SearchContext searchContext = searchService.createSearchContext(shardSearchLocalRequest, SearchService.NO_TIMEOUT);
         try {
-            ParsedQuery parsedQuery = searchContext.getQueryShardContext().toQuery(request.query());
+            ParsedQuery parsedQuery = searchContext.getSearchExecutionContext().toQuery(request.query());
             searchContext.parsedQuery(parsedQuery);
             searchContext.preProcess(request.rewrite());
             valid = true;

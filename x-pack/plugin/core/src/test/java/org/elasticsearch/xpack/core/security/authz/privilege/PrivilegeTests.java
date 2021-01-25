@@ -174,6 +174,10 @@ public class PrivilegeTests extends ESTestCase {
         assertThat(predicate.test("indices:admin/settings/foo"), is(false));
     }
 
+    public void testManageAutoscalingPrivilege() {
+        verifyClusterActionAllowed(ClusterPrivilegeResolver.MANAGE_AUTOSCALING, "cluster:admin/autoscaling/get_decision");
+    }
+
     public void testManageCcrPrivilege() {
         verifyClusterActionAllowed(ClusterPrivilegeResolver.MANAGE_CCR, "cluster:admin/xpack/ccr/follow_index",
             "cluster:admin/xpack/ccr/unfollow_index", "cluster:admin/xpack/ccr/brand_new_api");
@@ -252,6 +256,26 @@ public class PrivilegeTests extends ESTestCase {
                 "cluster:admin/ilm/start",
                 "cluster:admin/ilm/stop",
                 "cluster:admin/slm/execute",
+                "cluster:admin/whatever");
+
+        }
+    }
+
+    public void testIngestPipelinePrivileges() {
+        {
+            verifyClusterActionAllowed(ClusterPrivilegeResolver.MANAGE_INGEST_PIPELINES, "cluster:admin/ingest/pipeline/get",
+                "cluster:admin/ingest/pipeline/put",
+                "cluster:admin/ingest/pipeline/delete",
+                "cluster:admin/ingest/pipeline/simulate");
+            verifyClusterActionDenied(ClusterPrivilegeResolver.MANAGE_INGEST_PIPELINES, "cluster:admin/whatever");
+        }
+
+        {
+            verifyClusterActionAllowed(ClusterPrivilegeResolver.READ_PIPELINE,
+                "cluster:admin/ingest/pipeline/get",
+                "cluster:admin/ingest/pipeline/simulate");
+            verifyClusterActionDenied(ClusterPrivilegeResolver.READ_PIPELINE,"cluster:admin/ingest/pipeline/put",
+                "cluster:admin/ingest/pipeline/delete",
                 "cluster:admin/whatever");
 
         }

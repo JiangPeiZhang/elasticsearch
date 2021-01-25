@@ -5,10 +5,10 @@
  */
 package org.elasticsearch.xpack.sql.expression.function.scalar.datetime;
 
-import org.elasticsearch.xpack.sql.expression.Expression;
-import org.elasticsearch.xpack.sql.expression.gen.pipeline.Pipe;
-import org.elasticsearch.xpack.sql.expression.gen.processor.Processor;
-import org.elasticsearch.xpack.sql.tree.Source;
+import org.elasticsearch.xpack.ql.expression.Expression;
+import org.elasticsearch.xpack.ql.expression.gen.pipeline.Pipe;
+import org.elasticsearch.xpack.ql.expression.gen.processor.Processor;
+import org.elasticsearch.xpack.ql.tree.Source;
 
 import java.time.ZoneId;
 import java.util.Arrays;
@@ -46,9 +46,6 @@ public abstract class ThreeArgsDateTimePipe extends Pipe {
 
     @Override
     public final Pipe replaceChildren(List<Pipe> newChildren) {
-        if (newChildren.size() != 3) {
-            throw new IllegalArgumentException("expected [3] children but received [" + newChildren.size() + "]");
-        }
         return replaceChildren(newChildren.get(0), newChildren.get(1), newChildren.get(2));
     }
 

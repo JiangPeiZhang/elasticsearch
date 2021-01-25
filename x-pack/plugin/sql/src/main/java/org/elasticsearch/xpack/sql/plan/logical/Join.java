@@ -5,18 +5,20 @@
  */
 package org.elasticsearch.xpack.sql.plan.logical;
 
-import org.elasticsearch.xpack.sql.expression.Attribute;
-import org.elasticsearch.xpack.sql.expression.Expression;
-import org.elasticsearch.xpack.sql.expression.Nullability;
-import org.elasticsearch.xpack.sql.tree.NodeInfo;
-import org.elasticsearch.xpack.sql.tree.Source;
-import org.elasticsearch.xpack.sql.type.DataType;
+import org.elasticsearch.xpack.ql.expression.Attribute;
+import org.elasticsearch.xpack.ql.expression.Expression;
+import org.elasticsearch.xpack.ql.expression.Nullability;
+import org.elasticsearch.xpack.ql.plan.logical.BinaryPlan;
+import org.elasticsearch.xpack.ql.plan.logical.LogicalPlan;
+import org.elasticsearch.xpack.ql.tree.NodeInfo;
+import org.elasticsearch.xpack.ql.tree.Source;
+import org.elasticsearch.xpack.ql.type.DataTypes;
 
 import java.util.List;
 import java.util.Objects;
 
 import static java.util.stream.Collectors.toList;
-import static org.elasticsearch.xpack.sql.util.CollectionUtils.combine;
+import static org.elasticsearch.xpack.ql.util.CollectionUtils.combine;
 
 public class Join extends BinaryPlan {
 
@@ -44,9 +46,6 @@ public class Join extends BinaryPlan {
 
     @Override
     public LogicalPlan replaceChildren(List<LogicalPlan> newChildren) {
-        if (newChildren.size() != 2) {
-            throw new IllegalArgumentException("expected [2] children but received [" + newChildren.size() + "]");
-        }
         return new Join(source(), newChildren.get(0), newChildren.get(1), type, condition);
     }
 
@@ -100,7 +99,7 @@ public class Join extends BinaryPlan {
         return childrenResolved() &&
                 duplicatesResolved() &&
                 expressionsResolved() &&
-                (condition == null || DataType.BOOLEAN == condition.dataType());
+                (condition == null || DataTypes.BOOLEAN == condition.dataType());
     }
 
     @Override

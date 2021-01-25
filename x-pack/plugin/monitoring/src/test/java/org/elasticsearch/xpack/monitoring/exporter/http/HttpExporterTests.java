@@ -5,6 +5,7 @@
  */
 package org.elasticsearch.xpack.monitoring.exporter.http;
 
+import org.apache.http.client.CredentialsProvider;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy;
@@ -14,9 +15,11 @@ import org.elasticsearch.client.Response;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.sniff.Sniffer;
 import org.elasticsearch.cluster.ClusterState;
-import org.elasticsearch.cluster.metadata.MetaData;
+import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.cluster.node.DiscoveryNodes;
 import org.elasticsearch.cluster.service.ClusterService;
+import org.elasticsearch.common.settings.ClusterSettings;
+import org.elasticsearch.common.settings.MockSecureSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.settings.SettingsException;
 import org.elasticsearch.common.unit.TimeValue;
@@ -29,6 +32,7 @@ import org.elasticsearch.xpack.monitoring.exporter.ClusterAlertsUtil;
 import org.elasticsearch.xpack.monitoring.exporter.ExportBulk;
 import org.elasticsearch.xpack.monitoring.exporter.Exporter;
 import org.elasticsearch.xpack.monitoring.exporter.Exporter.Config;
+import org.elasticsearch.xpack.monitoring.exporter.MonitoringMigrationCoordinator;
 import org.junit.Before;
 import org.mockito.InOrder;
 
@@ -38,6 +42,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -69,7 +74,7 @@ public class HttpExporterTests extends ESTestCase {
 
     private final ClusterService clusterService = mock(ClusterService.class);
     private final XPackLicenseState licenseState = mock(XPackLicenseState.class);
-    private final MetaData metaData = mock(MetaData.class);
+    private final Metadata metadata = mock(Metadata.class);
 
     private final SSLService sslService = mock(SSLService.class);
     private final ThreadContext threadContext = new ThreadContext(Settings.EMPTY);
@@ -80,7 +85,7 @@ public class HttpExporterTests extends ESTestCase {
         final DiscoveryNodes nodes = mock(DiscoveryNodes.class);
 
         when(clusterService.state()).thenReturn(clusterState);
-        when(clusterState.metaData()).thenReturn(metaData);
+        when(clusterState.metadata()).thenReturn(metadata);
         when(clusterState.nodes()).thenReturn(nodes);
         // always let the watcher resources run for these tests; HttpExporterResourceTests tests it flipping on/off
         when(nodes.isLocalNodeElectedMaster()).thenReturn(true);
@@ -133,14 +138,27 @@ public class HttpExporterTests extends ESTestCase {
         final Settings.Builder builder = Settings.builder().put(prefix + ".type", "local");
         builder.putList(prefix + ".host", List.of("https://example.com:443"));
         final Settings settings = builder.build();
-        final IllegalArgumentException e = expectThrows(
-            IllegalArgumentException.class,
-            () -> HttpExporter.HOST_SETTING.getConcreteSetting(prefix + ".host").get(settings));
-        assertThat(
-            e,
-            hasToString(containsString("Failed to parse value [[\"https://example.com:443\"]] for setting [" + prefix + ".host]")));
-        assertThat(e.getCause(), instanceOf(SettingsException.class));
-        assertThat(e.getCause(), hasToString(containsString("host list for [" + prefix + ".host] is set but type is [local]")));
+        final ClusterSettings clusterSettings = new ClusterSettings(settings, Set.of(HttpExporter.HOST_SETTING, Exporter.TYPE_SETTING));
+        final SettingsException e = expectThrows(SettingsException.class, () -> clusterSettings.validate(settings, true));
+        assertThat(e, hasToString(containsString("[" + prefix + ".host] is set but type is [local]")));
+    }
+
+    public void testSecurePasswordIsRejectedIfTypeIsNotHttp() {
+        final String prefix = "xpack.monitoring.exporters.example";
+        final Settings.Builder builder = Settings.builder().put(prefix + ".type", "local");
+
+        final String settingName = ".auth.secure_password";
+        final String settingValue = "securePassword";
+        MockSecureSettings mockSecureSettings  = new MockSecureSettings();
+        mockSecureSettings.setString(prefix + settingName, settingValue);
+
+        builder.setSecureSettings(mockSecureSettings);
+
+        final Settings settings = builder.build();
+        final ClusterSettings clusterSettings =
+            new ClusterSettings(settings, Set.of(HttpExporter.AUTH_SECURE_PASSWORD_SETTING, Exporter.TYPE_SETTING));
+        final SettingsException e = expectThrows(SettingsException.class, () -> clusterSettings.validate(settings, true));
+        assertThat(e, hasToString(containsString("[" + prefix + settingName + "] is set but type is [local]")));
     }
 
     public void testInvalidHost() {
@@ -195,9 +213,10 @@ public class HttpExporterTests extends ESTestCase {
         }
 
         final Config config = createConfig(builder.build());
+        final MonitoringMigrationCoordinator coordinator = new MonitoringMigrationCoordinator();
 
         final SettingsException exception =
-                expectThrows(SettingsException.class, () -> new HttpExporter(config, sslService, threadContext));
+                expectThrows(SettingsException.class, () -> new HttpExporter(config, sslService, threadContext, coordinator));
 
         assertThat(exception.getMessage(), equalTo(expected));
     }
@@ -215,49 +234,12 @@ public class HttpExporterTests extends ESTestCase {
         }
 
         final Config config = createConfig(builder.build());
+        final MonitoringMigrationCoordinator coordinator = new MonitoringMigrationCoordinator();
 
         final SettingsException exception =
-                expectThrows(SettingsException.class, () -> new HttpExporter(config, sslService, threadContext));
+                expectThrows(SettingsException.class, () -> new HttpExporter(config, sslService, threadContext, coordinator));
 
         assertThat(exception.getMessage(), equalTo(expected));
-    }
-
-    public void testExporterWithPasswordButNoUsername() {
-        final String expected =
-                "[xpack.monitoring.exporters._http.auth.password] without [xpack.monitoring.exporters._http.auth.username]";
-        final String prefix = "xpack.monitoring.exporters._http";
-        final Settings settings = Settings.builder()
-            .put(prefix + ".type", HttpExporter.TYPE)
-            .put(prefix + ".host", "localhost:9200")
-            .put(prefix + ".auth.password", "_pass")
-            .build();
-
-        final IllegalArgumentException e = expectThrows(
-            IllegalArgumentException.class,
-            () -> HttpExporter.AUTH_PASSWORD_SETTING.getConcreteSetting(prefix + ".auth.password").get(settings));
-        assertThat(e, hasToString(containsString(expected)));
-    }
-
-    public void testExporterWithUsernameButNoPassword() {
-        final String expected =
-            "[xpack.monitoring.exporters._http.auth.username] is set but [xpack.monitoring.exporters._http.auth.password] is missing";
-        final String prefix = "xpack.monitoring.exporters._http";
-        final Settings settings = Settings.builder()
-            .put(prefix + ".type", HttpExporter.TYPE)
-            .put(prefix + ".host", "localhost:9200")
-            .put(prefix + ".auth.username", "_user")
-            .build();
-
-        final IllegalArgumentException e = expectThrows(
-            IllegalArgumentException.class,
-            () -> HttpExporter.AUTH_USERNAME_SETTING.getConcreteSetting(prefix + ".auth.username").get(settings));
-        assertThat(
-            e,
-            hasToString(
-                containsString("Failed to parse value for setting [xpack.monitoring.exporters._http.auth.username]")));
-
-        assertThat(e.getCause(), instanceOf(SettingsException.class));
-        assertThat(e.getCause(), hasToString(containsString(expected)));
     }
 
     public void testExporterWithUnknownBlacklistedClusterAlerts() {
@@ -279,9 +261,10 @@ public class HttpExporterTests extends ESTestCase {
                 .putList("xpack.monitoring.exporters._http.cluster_alerts.management.blacklist", blacklist);
 
         final Config config = createConfig(builder.build());
+        final MonitoringMigrationCoordinator coordinator = new MonitoringMigrationCoordinator();
 
         final SettingsException exception =
-                expectThrows(SettingsException.class, () -> new HttpExporter(config, sslService, threadContext));
+                expectThrows(SettingsException.class, () -> new HttpExporter(config, sslService, threadContext, coordinator));
 
         assertThat(exception.getMessage(),
                    equalTo("[xpack.monitoring.exporters._http.cluster_alerts.management.blacklist] contains unrecognized Cluster " +
@@ -297,8 +280,9 @@ public class HttpExporterTests extends ESTestCase {
                 .put("xpack.monitoring.exporters._http.host", "http://localhost:9200");
 
         final Config config = createConfig(builder.build());
+        final MonitoringMigrationCoordinator coordinator = new MonitoringMigrationCoordinator();
 
-        new HttpExporter(config, sslService, threadContext).close();
+        new HttpExporter(config, sslService, threadContext, coordinator).close();
     }
 
     public void testExporterWithInvalidProxyBasePath() throws Exception {
@@ -334,9 +318,12 @@ public class HttpExporterTests extends ESTestCase {
                 .put("xpack.monitoring.exporters._http.host", "http://localhost:9200");
 
         // use basic auth
-        if (randomBoolean()) {
-            builder.put("xpack.monitoring.exporters._http.auth.username", "_user")
-                   .put("xpack.monitoring.exporters._http.auth.password", "_pass");
+        final boolean useBasicAuth = randomBoolean();
+        if (useBasicAuth) {
+            builder.put("xpack.monitoring.exporters._http.auth.username", "_user");
+            MockSecureSettings mockSecureSettings  = new MockSecureSettings();
+            mockSecureSettings.setString("xpack.monitoring.exporters._http.auth.secure_password", "securePassword");
+            builder.setSecureSettings(mockSecureSettings);
         }
 
         // use headers
@@ -349,6 +336,17 @@ public class HttpExporterTests extends ESTestCase {
 
         // doesn't explode
         HttpExporter.createRestClient(config, sslService, listener).close();
+    }
+
+    public void testCreateCredentialsProviderWithoutSecurity() {
+        final Settings.Builder builder = Settings.builder()
+            .put("xpack.monitoring.exporters._http.type", "http")
+            .put("xpack.monitoring.exporters._http.host", "http://localhost:9200");
+
+        final Config config = createConfig(builder.build());
+        CredentialsProvider provider = HttpExporter.createCredentialsProvider(config);
+
+        assertNull(provider);
     }
 
     public void testCreateSnifferDisabledByDefault() {
@@ -422,7 +420,7 @@ public class HttpExporterTests extends ESTestCase {
 
         final Config config = createConfig(builder.build());
 
-        final MultiHttpResource multiResource = HttpExporter.createResources(config);
+        final MultiHttpResource multiResource = HttpExporter.createResources(config).allResources;
 
         final List<HttpResource> resources = multiResource.getResources();
         final int version = (int)resources.stream().filter((resource) -> resource instanceof VersionHttpResource).count();
@@ -505,6 +503,37 @@ public class HttpExporterTests extends ESTestCase {
         assertThat(parameters.size(), equalTo(0));
     }
 
+    public void testHttpExporterMigrationInProgressBlock() throws Exception {
+        final Config config = createConfig(Settings.EMPTY);
+        final RestClient client = mock(RestClient.class);
+        final Sniffer sniffer = randomFrom(mock(Sniffer.class), null);
+        final NodeFailureListener listener = mock(NodeFailureListener.class);
+        // this is configured to throw an error when the resource is checked
+        final HttpResource resource = new MockHttpResource(exporterName(), true, null, false);
+        final HttpResource alertsResource = new MockHttpResource(exporterName(), false, null, false);
+        final MonitoringMigrationCoordinator migrationCoordinator = new MonitoringMigrationCoordinator();
+        assertTrue(migrationCoordinator.tryBlockInstallationTasks());
+
+        try (HttpExporter exporter = new HttpExporter(config, client, sniffer, threadContext, migrationCoordinator, listener, resource,
+            alertsResource)) {
+            verify(listener).setResource(resource);
+
+            final CountDownLatch awaitResponseAndClose = new CountDownLatch(1);
+            final ActionListener<ExportBulk> bulkListener = ActionListener.wrap(
+                bulk -> {
+                    assertNull("should have been invoked with null value to denote migration in progress", bulk);
+                    awaitResponseAndClose.countDown();
+                },
+                e -> fail("[onResponse] should have been invoked with null value to denote migration in progress")
+            );
+
+            exporter.openBulk(bulkListener);
+
+            // wait for it to actually respond
+            assertTrue(awaitResponseAndClose.await(15, TimeUnit.SECONDS));
+        }
+    }
+
     public void testHttpExporterDirtyResourcesBlock() throws Exception {
         final Config config = createConfig(Settings.EMPTY);
         final RestClient client = mock(RestClient.class);
@@ -512,8 +541,11 @@ public class HttpExporterTests extends ESTestCase {
         final NodeFailureListener listener = mock(NodeFailureListener.class);
         // this is configured to throw an error when the resource is checked
         final HttpResource resource = new MockHttpResource(exporterName(), true, null, false);
+        final HttpResource alertsResource = new MockHttpResource(exporterName(), false, null, false);
+        final MonitoringMigrationCoordinator migrationCoordinator = new MonitoringMigrationCoordinator();
 
-        try (HttpExporter exporter = new HttpExporter(config, client, sniffer, threadContext, listener, resource)) {
+        try (HttpExporter exporter = new HttpExporter(config, client, sniffer, threadContext, migrationCoordinator, listener, resource,
+            alertsResource)) {
             verify(listener).setResource(resource);
 
             final CountDownLatch awaitResponseAndClose = new CountDownLatch(1);
@@ -536,8 +568,11 @@ public class HttpExporterTests extends ESTestCase {
         final NodeFailureListener listener = mock(NodeFailureListener.class);
         // always has to check, and never succeeds checks but it does not throw an exception (e.g., version check fails)
         final HttpResource resource = new MockHttpResource(exporterName(), true, false, false);
+        final HttpResource alertsResource = new MockHttpResource(exporterName(), false, null, false);
+        final MonitoringMigrationCoordinator migrationCoordinator = new MonitoringMigrationCoordinator();
 
-        try (HttpExporter exporter = new HttpExporter(config, client, sniffer, threadContext, listener, resource)) {
+        try (HttpExporter exporter = new HttpExporter(config, client, sniffer, threadContext, migrationCoordinator, listener, resource,
+            alertsResource)) {
             verify(listener).setResource(resource);
 
             final CountDownLatch awaitResponseAndClose = new CountDownLatch(1);
@@ -564,8 +599,11 @@ public class HttpExporterTests extends ESTestCase {
         final NodeFailureListener listener = mock(NodeFailureListener.class);
         // sometimes dirty to start with and sometimes not; but always succeeds on checkAndPublish
         final HttpResource resource = new MockHttpResource(exporterName(), randomBoolean());
+        final HttpResource alertsResource = new MockHttpResource(exporterName(), false, null, false);
+        final MonitoringMigrationCoordinator migrationCoordinator = new MonitoringMigrationCoordinator();
 
-        try (HttpExporter exporter = new HttpExporter(config, client, sniffer, threadContext, listener, resource)) {
+        try (HttpExporter exporter = new HttpExporter(config, client, sniffer, threadContext, migrationCoordinator, listener, resource,
+            alertsResource)) {
             verify(listener).setResource(resource);
 
             final CountDownLatch awaitResponseAndClose = new CountDownLatch(1);
@@ -591,6 +629,8 @@ public class HttpExporterTests extends ESTestCase {
         final Sniffer sniffer = randomFrom(mock(Sniffer.class), null);
         final NodeFailureListener listener = mock(NodeFailureListener.class);
         final MultiHttpResource resource = mock(MultiHttpResource.class);
+        final HttpResource alertsResource = mock(MultiHttpResource.class);
+        final MonitoringMigrationCoordinator migrationCoordinator = new MonitoringMigrationCoordinator();
 
         if (sniffer != null && rarely()) {
             doThrow(new RuntimeException("expected")).when(sniffer).close();
@@ -600,7 +640,7 @@ public class HttpExporterTests extends ESTestCase {
             doThrow(randomFrom(new IOException("expected"), new RuntimeException("expected"))).when(client).close();
         }
 
-        new HttpExporter(config, client, sniffer, threadContext, listener, resource).close();
+        new HttpExporter(config, client, sniffer, threadContext, migrationCoordinator, listener, resource, alertsResource).close();
 
         // order matters; sniffer must close first
         if (sniffer != null) {

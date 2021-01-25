@@ -18,6 +18,7 @@
  */
 package org.elasticsearch.client.ml.dataframe.evaluation.classification;
 
+import org.elasticsearch.client.ml.dataframe.evaluation.EvaluationMetric;
 import org.elasticsearch.client.ml.dataframe.evaluation.MlEvaluationNamedXContentProvider;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.common.xcontent.XContentParser;
@@ -25,6 +26,7 @@ import org.elasticsearch.test.AbstractXContentTestCase;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.function.Predicate;
 
 public class ClassificationTests extends AbstractXContentTestCase<Classification> {
@@ -35,10 +37,19 @@ public class ClassificationTests extends AbstractXContentTestCase<Classification
     }
 
     public static Classification createRandom() {
+        List<EvaluationMetric> metrics =
+            randomSubsetOf(
+                Arrays.asList(
+                    AucRocMetricTests.createRandom(),
+                    AccuracyMetricTests.createRandom(),
+                    PrecisionMetricTests.createRandom(),
+                    RecallMetricTests.createRandom(),
+                    MulticlassConfusionMatrixMetricTests.createRandom()));
         return new Classification(
             randomAlphaOfLength(10),
-            randomAlphaOfLength(10),
-            randomBoolean() ? null : Arrays.asList(new MulticlassConfusionMatrixMetric()));
+            randomBoolean() ? randomAlphaOfLength(10) : null,
+            randomBoolean() ? randomAlphaOfLength(10) : null,
+            metrics.isEmpty() ? null : metrics);
     }
 
     @Override

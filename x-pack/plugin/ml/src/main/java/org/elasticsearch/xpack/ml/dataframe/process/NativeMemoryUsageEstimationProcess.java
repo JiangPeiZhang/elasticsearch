@@ -5,13 +5,12 @@
  */
 package org.elasticsearch.xpack.ml.dataframe.process;
 
-import org.elasticsearch.common.bytes.BytesReference;
+import org.elasticsearch.client.Client;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
 import org.elasticsearch.xpack.ml.dataframe.process.results.MemoryUsageEstimationResult;
 import org.elasticsearch.xpack.ml.process.NativeController;
+import org.elasticsearch.xpack.ml.process.ProcessPipes;
 
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
@@ -20,12 +19,10 @@ public class NativeMemoryUsageEstimationProcess extends AbstractNativeAnalyticsP
 
     private static final String NAME = "memory_usage_estimation";
 
-    protected NativeMemoryUsageEstimationProcess(String jobId, NativeController nativeController, InputStream logStream,
-                                                 OutputStream processInStream, InputStream processOutStream,
-                                                 OutputStream processRestoreStream, int numberOfFields, List<Path> filesToDelete,
-                                                 Consumer<String> onProcessCrash) {
-        super(NAME, MemoryUsageEstimationResult.PARSER, jobId, nativeController, logStream, processInStream, processOutStream,
-            processRestoreStream, numberOfFields, filesToDelete, onProcessCrash, NamedXContentRegistry.EMPTY);
+    protected NativeMemoryUsageEstimationProcess(String jobId, NativeController nativeController, ProcessPipes processPipes,
+                                                 int numberOfFields, List<Path> filesToDelete, Consumer<String> onProcessCrash) {
+        super(NAME, MemoryUsageEstimationResult.PARSER, jobId, nativeController, processPipes, numberOfFields, filesToDelete,
+            onProcessCrash, NamedXContentRegistry.EMPTY);
     }
 
     @Override
@@ -34,7 +31,7 @@ public class NativeMemoryUsageEstimationProcess extends AbstractNativeAnalyticsP
     }
 
     @Override
-    public void restoreState(BytesReference state) {
+    public void restoreState(Client client, String stateDocIdPrefix) {
         throw new UnsupportedOperationException();
     }
 }

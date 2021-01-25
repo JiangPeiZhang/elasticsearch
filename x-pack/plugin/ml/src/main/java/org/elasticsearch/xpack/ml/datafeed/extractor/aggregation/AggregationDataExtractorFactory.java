@@ -50,7 +50,9 @@ public class AggregationDataExtractorFactory implements DataExtractorFactory {
                 Intervals.alignToCeil(start, histogramInterval),
                 Intervals.alignToFloor(end, histogramInterval),
                 job.getAnalysisConfig().getSummaryCountFieldName().equals(DatafeedConfig.DOC_COUNT),
-                datafeedConfig.getHeaders());
+                datafeedConfig.getHeaders(),
+                datafeedConfig.getIndicesOptions(),
+                datafeedConfig.getRuntimeMappings());
         return new AggregationDataExtractor(client, dataExtractorContext, timingStatsReporter);
     }
 }

@@ -5,10 +5,12 @@
  */
 package org.elasticsearch.xpack.sql.expression.function.aggregate;
 
-import org.elasticsearch.xpack.sql.expression.Expression;
-import org.elasticsearch.xpack.sql.tree.Source;
-import org.elasticsearch.xpack.sql.tree.NodeInfo;
-import org.elasticsearch.xpack.sql.type.DataType;
+import org.elasticsearch.xpack.ql.expression.Expression;
+import org.elasticsearch.xpack.ql.expression.function.aggregate.EnclosedAgg;
+import org.elasticsearch.xpack.ql.tree.NodeInfo;
+import org.elasticsearch.xpack.ql.tree.Source;
+import org.elasticsearch.xpack.ql.type.DataType;
+import org.elasticsearch.xpack.ql.type.DataTypes;
 
 import java.util.List;
 
@@ -28,9 +30,6 @@ public class Avg extends NumericAggregate implements EnclosedAgg {
 
     @Override
     public Avg replaceChildren(List<Expression> newChildren) {
-        if (newChildren.size() != 1) {
-            throw new IllegalArgumentException("expected [1] child but received [" + newChildren.size() + "]");
-        }
         return new Avg(source(), newChildren.get(0));
     }
 
@@ -41,6 +40,6 @@ public class Avg extends NumericAggregate implements EnclosedAgg {
 
     @Override
     public DataType dataType() {
-        return DataType.DOUBLE;
+        return DataTypes.DOUBLE;
     }
 }
